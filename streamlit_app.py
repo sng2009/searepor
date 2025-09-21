@@ -103,7 +103,7 @@ with tabs[3]:
     category = st.multiselect(
         "분류군 선택", 
         ["포유류", "조류", "양서류", "해양 생물", "곤충"], 
-        default=["포유류","조류"],
+        default=["포유류","조류", "양서류", "해양 생물", "곤충"],
         key="species_category"
     )
     period = st.slider("분석 기간 선택", 2000, 2023, (2010, 2023), key="species_period")
