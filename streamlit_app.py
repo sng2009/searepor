@@ -54,22 +54,37 @@ def df_csv_download_button(df, filename, label="CSV 다운로드"):
 # ---------------- 공개 데이터 ----------------
 @st.cache_data
 def fetch_nasa_gistemp():
-    url = "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv"
+    backup_path = os.path.join(DATA_DIR, "nasa_gistemp_backup.csv")
     try:
+        # 1차 시도: NASA API
+        url = "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv"
         r = requests.get(url, timeout=15)
         r.raise_for_status()
         lines = r.text.splitlines()
-        start_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("Year"))
-        df = pd.read_csv(io.StringIO("\n".join(lines[start_idx:])))
-        df = df[['Year', 'J-D']].dropna()
-        df.columns = ['연도', '기온 이상치(°C)']
-        df['연도'] = df['연도'].astype(int)
-        df['기온 이상치(°C)'] = pd.to_numeric(df['기온 이상치(°C)'], errors='coerce')
-        return remove_future_years(df, '연도'), None
     except:
-        years = list(range(2015, TODAY.year + 1))
-        df = pd.DataFrame({'연도': years, '기온 이상치(°C)': np.linspace(0.84, 1.07, len(years))})
-        return df, "NASA API 실패로 예시 데이터 사용"
+        # 실패 시 로컬 백업 사용
+        if os.path.exists(backup_path):
+            with open(backup_path, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        else:
+            years = list(range(2015, TODAY.year + 1))
+            df = pd.DataFrame({'연도': years, '기온 이상치(°C)': np.linspace(0.84, 1.07, len(years))})
+            return df, "NASA API 및 로컬 백업 모두 실패 — 예시 데이터 사용"
+
+    # 헤더 행 찾기
+    start_idx = next(i for i, line in enumerate(lines) if line.startswith("Year"))
+    df = pd.read_csv(io.StringIO("\n".join(lines[start_idx:])))
+
+    # *** → NaN 처리
+    df = df.replace("***", np.nan)
+
+    # 연도와 J-D만 추출, J-D 없는 행 제거
+    df = df[['Year', 'J-D']].dropna(subset=['J-D'])
+    df.columns = ['연도', '기온 이상치(°C)']
+    df['연도'] = df['연도'].astype(int)
+    df['기온 이상치(°C)'] = pd.to_numeric(df['기온 이상치(°C)'], errors='coerce')
+
+    return remove_future_years(df, '연도'), None
 
 @st.cache_data
 def fetch_worldbank_forest():
