@@ -117,33 +117,51 @@ tabs = st.tabs([
 with tabs[0]:
     st.subheader("글로벌 연평균 기온 이상치 (NASA GISTEMP)")
     df_gistemp, status_gis = fetch_nasa_gistemp()
-    if status_gis: st.info(status_gis)
-    yrs = st.slider("기간", int(df_gistemp['연도'].min()), int(df_gistemp['연도'].max()),
-                    (int(df_gistemp['연도'].min()), int(df_gistemp['연도'].max())))
+    if status_gis:
+        st.info(status_gis)
+
+    # 기간 선택
+    yrs = st.slider(
+        "기간",
+        int(df_gistemp['연도'].min()), int(df_gistemp['연도'].max()),
+        (int(df_gistemp['연도'].min()), int(df_gistemp['연도'].max()))
+    )
     df_gf = df_gistemp[(df_gistemp['연도'] >= yrs[0]) & (df_gistemp['연도'] <= yrs[1])]
+
+    # 통계 계산
+    avg_val = df_gf['기온 이상치(°C)'].mean()
+    max_row = df_gf.loc[df_gf['기온 이상치(°C)'].idxmax()]
+    min_row = df_gf.loc[df_gf['기온 이상치(°C)'].idxmin()]
+    last_val = df_gf.iloc[-1, 1]
+
+    # 변화율 계산 (평균 기준)
+    기준값 = avg_val
+    if abs(기준값) < 0.1:
+        change_display = f"{last_val - 기준값:+.2f}°C"
+    else:
+        rate = ((last_val - 기준값) / abs(기준값)) * 100
+        change_display = f"{rate:+.1f}%"
+
+    # 카드 UI
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("평균", f"{avg_val:.2f}°C")
+    col2.metric("최댓값", f"{max_row['기온 이상치(°C)']:.2f}°C", f"{int(max_row['연도'])}년")
+    col3.metric("최솟값", f"{min_row['기온 이상치(°C)']:.2f}°C", f"{int(min_row['연도'])}년")
+    col4.metric("변화율(평균 대비)", change_display)
+
+    # 그래프
     fig = px.line(df_gf, x='연도', y='기온 이상치(°C)', markers=True)
+    fig.add_hline(y=avg_val, line_dash="dot", line_color="green", annotation_text=f"평균 {avg_val:.2f}°C")
+    fig.add_scatter(
+        x=[max_row['연도']], y=[max_row['기온 이상치(°C)']],
+        mode="markers+text", text=[f"최댓값 {max_row['기온 이상치(°C)']:.2f}°C"], textposition="top center"
+    )
+    fig.add_scatter(
+        x=[min_row['연도']], y=[min_row['기온 이상치(°C)']],
+        mode="markers+text", text=[f"최솟값 {min_row['기온 이상치(°C)']:.2f}°C"], textposition="bottom center"
+    )
     fig_set_font(fig)
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("출처: NASA GISTEMP — https://data.giss.nasa.gov/gistemp/")
-
-    st.subheader("한국 숲 면적 비율 (World Bank)")
-    df_wb, status_wb = fetch_worldbank_forest()
-    if status_wb: st.info(status_wb)
-    yrs2 = st.slider("기간 ", int(df_wb['연도'].min()), int(df_wb['연도'].max()),
-                     (int(df_wb['연도'].min()), int(df_wb['연도'].max())))
-    df_wbf = df_wb[(df_wb['연도'] >= yrs2[0]) & (df_wb['연도'] <= yrs2[1])]
-
-    # Y축 스케일 옵션
-    yscale = st.radio("Y축 스케일", ["데이터 범위", "0부터 시작"], horizontal=True)
-    fig2 = px.area(df_wbf, x='연도', y='숲 면적 비율(%)', markers=True)
-    if yscale == "데이터 범위":
-        ymin, ymax = df_wbf['숲 면적 비율(%)'].min(), df_wbf['숲 면적 비율(%)'].max()
-        fig2.update_yaxes(range=[ymin - 0.5, ymax + 0.5])
-    else:
-        fig2.update_yaxes(range=[0, 100])
-    fig_set_font(fig2)
-    st.plotly_chart(fig2, use_container_width=True)
-    st.caption("출처: World Bank — https://data.worldbank.org/indicator/AG.LND.FRST.ZS")
 
 # --- 사용자: 기온 ---
 with tabs[1]:
@@ -154,17 +172,53 @@ with tabs[1]:
     df_temp['연도'] = df_temp['연도'].astype(int)
     df_temp['평균기온(°C)'] = df_temp['평균기온(°C)'].astype(float)
 
-    yrs = st.slider("기간", int(df_temp['연도'].min()), int(df_temp['연도'].max()),
-                    (int(df_temp['연도'].min()), int(df_temp['연도'].max())))
+    # 기간 및 이동평균 윈도우 선택
+    yrs = st.slider(
+        "기간",
+        int(df_temp['연도'].min()), int(df_temp['연도'].max()),
+        (int(df_temp['연도'].min()), int(df_temp['연도'].max()))
+    )
     window = st.slider("이동평균 윈도우", 1, 10, 3)
+
+    # 데이터 필터링 및 이동평균 계산
     df_f = df_temp[(df_temp['연도'] >= yrs[0]) & (df_temp['연도'] <= yrs[1])]
     df_f['이동평균'] = df_f['평균기온(°C)'].rolling(window).mean()
 
+    # 통계 계산
+    avg_val = df_f['평균기온(°C)'].mean()
+    max_row = df_f.loc[df_f['평균기온(°C)'].idxmax()]
+    min_row = df_f.loc[df_f['평균기온(°C)'].idxmin()]
+    last_val = df_f.iloc[-1, 1]
+
+    # 변화율 계산 (평균 기준)
+    기준값 = avg_val
+    if abs(기준값) < 0.1:
+        change_display = f"{last_val - 기준값:+.2f}°C"
+    else:
+        rate = ((last_val - 기준값) / abs(기준값)) * 100
+        change_display = f"{rate:+.1f}%"
+
+    # 카드 UI
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("평균", f"{avg_val:.2f}°C")
+    col2.metric("최댓값", f"{max_row['평균기온(°C)']:.2f}°C", f"{int(max_row['연도'])}년")
+    col3.metric("최솟값", f"{min_row['평균기온(°C)']:.2f}°C", f"{int(min_row['연도'])}년")
+    col4.metric("변화율(평균 대비)", change_display)
+
+    # 그래프
     fig = px.line(df_f, x='연도', y=['평균기온(°C)', '이동평균'], markers=True)
+    fig.add_hline(y=avg_val, line_dash="dot", line_color="green", annotation_text=f"평균 {avg_val:.2f}°C")
+    fig.add_scatter(
+        x=[max_row['연도']], y=[max_row['평균기온(°C)']],
+        mode="markers+text", text=[f"최댓값 {max_row['평균기온(°C)']:.2f}°C"], textposition="top center"
+    )
+    fig.add_scatter(
+        x=[min_row['연도']], y=[min_row['평균기온(°C)']],
+        mode="markers+text", text=[f"최솟값 {min_row['평균기온(°C)']:.2f}°C"], textposition="bottom center"
+    )
     fig_set_font(fig)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 사용자: 산불과 서식지 파괴 ---
 # --- 사용자: 산불과 서식지 파괴 ---
 with tabs[2]:
     st.subheader("산불 발생 현황 및 피해 면적")
@@ -176,12 +230,35 @@ with tabs[2]:
 
     # 전국 분석
     metric_total = st.selectbox("전국 분석 지표 선택", ["건수", "면적(ha)"])
-    yrs_fire = st.slider("전국 분석 기간",
-                         int(df_fire_total['구분'].min()), int(df_fire_total['구분'].max()),
-                         (int(df_fire_total['구분'].min()), int(df_fire_total['구분'].max())))
+    yrs_fire = st.slider(
+        "전국 분석 기간",
+        int(df_fire_total['구분'].min()), int(df_fire_total['구분'].max()),
+        (int(df_fire_total['구분'].min()), int(df_fire_total['구분'].max()))
+    )
     df_fire_filtered = df_fire_total[(df_fire_total['구분'] >= yrs_fire[0]) & (df_fire_total['구분'] <= yrs_fire[1])]
 
-    # 막대 + 선 그래프 생성
+    # 통계 계산
+    avg_val = df_fire_filtered[metric_total].mean()
+    max_row = df_fire_filtered.loc[df_fire_filtered[metric_total].idxmax()]
+    min_row = df_fire_filtered.loc[df_fire_filtered[metric_total].idxmin()]
+    last_val = df_fire_filtered.iloc[-1][metric_total]
+
+    # 변화율 계산 (평균 기준)
+    기준값 = avg_val
+    if abs(기준값) < 0.1:
+        change_display = f"{last_val - 기준값:+.0f}"
+    else:
+        rate = ((last_val - 기준값) / abs(기준값)) * 100
+        change_display = f"{rate:+.1f}%"
+
+    # 카드 UI
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("평균", f"{avg_val:.0f}")
+    col2.metric("최댓값", f"{max_row[metric_total]:.0f}", f"{int(max_row['구분'])}년")
+    col3.metric("최솟값", f"{min_row[metric_total]:.0f}", f"{int(min_row['구분'])}년")
+    col4.metric("변화율(평균 대비)", change_display)
+
+    # 그래프 (전국)
     fig_fire_total = px.bar(df_fire_filtered, x="구분", y=metric_total, text=metric_total,
                             title=f"전국 {metric_total} 추이 (막대+선)")
     fig_fire_total.add_scatter(x=df_fire_filtered["구분"], y=df_fire_filtered[metric_total],
@@ -203,11 +280,30 @@ with tabs[2]:
 
     # 선택한 지역의 모든 지표 데이터
     df_region_filtered = df_fire_region[df_fire_region['구분'] == selected_region].drop(columns=['구분'])
-
-    # 긴 형식으로 변환
     df_long = df_region_filtered.melt(var_name="지표", value_name="값")
 
-    # 막대그래프 생성 (가장 보기 편한 형식)
+    # 통계 계산 (지역별)
+    avg_val_r = df_long['값'].mean()
+    max_row_r = df_long.loc[df_long['값'].idxmax()]
+    min_row_r = df_long.loc[df_long['값'].idxmin()]
+    last_val_r = df_long.iloc[-1]['값']
+
+    # 변화율 계산 (평균 기준)
+    기준값_r = avg_val_r
+    if abs(기준값_r) < 0.1:
+        change_display_r = f"{last_val_r - 기준값_r:+.0f}"
+    else:
+        rate_r = ((last_val_r - 기준값_r) / abs(기준값_r)) * 100
+        change_display_r = f"{rate_r:+.1f}%"
+
+    # 카드 UI (지역별)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("평균", f"{avg_val_r:.0f}")
+    col2.metric("최댓값", f"{max_row_r['값']:.0f}", max_row_r['지표'])
+    col3.metric("최솟값", f"{min_row_r['값']:.0f}", min_row_r['지표'])
+    col4.metric("변화율(평균 대비)", change_display_r)
+
+    # 그래프 (지역별)
     fig_bar_all = px.bar(
         df_long,
         x="지표",
@@ -234,29 +330,100 @@ with tabs[3]:
     df_sea['Year'] = df_sea['Year'].astype(int)
     df_sea['Anomaly'] = df_sea['Anomaly'].astype(float)
 
-    yrs_sea = st.slider("기간", int(df_sea['Year'].min()), int(df_sea['Year'].max()),
-                        (int(df_sea['Year'].min()), int(df_sea['Year'].max())))
+    # 기간 및 이동평균 윈도우 선택
+    yrs_sea = st.slider(
+        "기간",
+        int(df_sea['Year'].min()), int(df_sea['Year'].max()),
+        (int(df_sea['Year'].min()), int(df_sea['Year'].max()))
+    )
     window = st.slider("이동평균 윈도우", 1, 10, 5)
+
+    # 데이터 필터링 및 이동평균 계산
     df_sea_filtered = df_sea[(df_sea['Year'] >= yrs_sea[0]) & (df_sea['Year'] <= yrs_sea[1])]
     df_sea_filtered["이동평균"] = df_sea_filtered["Anomaly"].rolling(window).mean()
 
-    fig_sea = px.line(df_sea_filtered, x="Year", y=["Anomaly", "이동평균"], markers=True,
-                      labels={"value": "해수면 온도 편차 (°C)", "variable": "지표"})
+    # 통계 계산
+    avg_val = df_sea_filtered['Anomaly'].mean()
+    max_row = df_sea_filtered.loc[df_sea_filtered['Anomaly'].idxmax()]
+    min_row = df_sea_filtered.loc[df_sea_filtered['Anomaly'].idxmin()]
+    last_val = df_sea_filtered.iloc[-1]['Anomaly']
+
+    # 변화율 계산 (평균 기준)
+    기준값 = avg_val
+    if abs(기준값) < 0.1:
+        change_display = f"{last_val - 기준값:+.2f}°C"
+    else:
+        rate = ((last_val - 기준값) / abs(기준값)) * 100
+        change_display = f"{rate:+.1f}%"
+
+    # 카드 UI
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("평균", f"{avg_val:.2f}°C")
+    col2.metric("최댓값", f"{max_row['Anomaly']:.2f}°C", f"{int(max_row['Year'])}년")
+    col3.metric("최솟값", f"{min_row['Anomaly']:.2f}°C", f"{int(min_row['Year'])}년")
+    col4.metric("변화율(평균 대비)", change_display)
+
+    # 그래프
+    fig_sea = px.line(
+        df_sea_filtered, x="Year", y=["Anomaly", "이동평균"], markers=True,
+        labels={"value": "해수면 온도 편차 (°C)", "variable": "지표"}
+    )
+    fig_sea.add_hline(y=avg_val, line_dash="dot", line_color="green", annotation_text=f"평균 {avg_val:.2f}°C")
+    fig_sea.add_scatter(
+        x=[max_row['Year']], y=[max_row['Anomaly']],
+        mode="markers+text", text=[f"최댓값 {max_row['Anomaly']:.2f}°C"], textposition="top center"
+    )
+    fig_sea.add_scatter(
+        x=[min_row['Year']], y=[min_row['Anomaly']],
+        mode="markers+text", text=[f"최솟값 {min_row['Anomaly']:.2f}°C"], textposition="bottom center"
+    )
     fig_set_font(fig_sea)
     st.plotly_chart(fig_sea, use_container_width=True)
 
 # --- 사용자: 멸종위기종 ---
 with tabs[4]:
     st.subheader("분류군별 멸종위기종 종 수")
+    
+    # 데이터 불러오기
     df_species = load_csv("환경부 국립생물자원관_한국의 멸종위기종_20241231..csv")
     df_species['분류군'] = df_species['분류군'].str.strip()
     species_count = df_species['분류군'].value_counts().reset_index()
     species_count.columns = ['분류군', '종 수']
 
-    selected_groups = st.multiselect("분류군 선택", species_count['분류군'].tolist(),
-                                     default=species_count['분류군'].tolist())
+    # 분류군 선택
+    selected_groups = st.multiselect(
+        "분류군 선택",
+        species_count['분류군'].tolist(),
+        default=species_count['분류군'].tolist()
+    )
     df_species_filtered = species_count[species_count['분류군'].isin(selected_groups)]
 
-    fig_species = px.bar(df_species_filtered, x='분류군', y='종 수', text='종 수')
+    # 통계 계산
+    max_row = df_species_filtered.loc[df_species_filtered['종 수'].idxmax()]
+    min_row = df_species_filtered.loc[df_species_filtered['종 수'].idxmin()]
+
+    # 카드 UI (평균 제거)
+    col1, col2 = st.columns(2)
+    col1.metric("최댓값", f"{max_row['종 수']:.0f} 종", max_row['분류군'])
+    col2.metric("최솟값", f"{min_row['종 수']:.0f} 종", min_row['분류군'])
+
+    # 그래프
+    fig_species = px.bar(
+        df_species_filtered,
+        x='분류군',
+        y='종 수',
+        text='종 수',
+        color='종 수',
+        color_continuous_scale="Reds"
+    )
+    fig_species.add_scatter(
+        x=[max_row['분류군']], y=[max_row['종 수']],
+        mode="markers+text", text=[f"최댓값 {max_row['종 수']}"], textposition="top center"
+    )
+    fig_species.add_scatter(
+        x=[min_row['분류군']], y=[min_row['종 수']],
+        mode="markers+text", text=[f"최솟값 {min_row['종 수']}"], textposition="bottom center"
+    )
     fig_set_font(fig_species)
     st.plotly_chart(fig_species, use_container_width=True)
+    
