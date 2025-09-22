@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 
 st.set_page_config(page_title="기후 변화 대시보드", layout="wide")
@@ -16,13 +15,14 @@ tabs = st.tabs(["🌡️ 기온 변화", "🔥 산불과 서식지 파괴", "�
 
 # ---------------- 기온 변화 ----------------
 with tabs[0]:
-    st.subheader("연평균 기온 변화 (2000~2023)")
+    st.subheader("연평균 기온 변화 (2000~2024)")
+    df_temp_raw = pd.read_csv("/workspaces/searepor/datas/기온 추이_20250922110433.csv")
+    df_temp = df_temp_raw.set_index('계절').loc['년평균'].reset_index()
+    df_temp.columns = ['연도', '평균기온(°C)']
+    df_temp['연도'] = df_temp['연도'].astype(int)
+    df_temp['평균기온(°C)'] = df_temp['평균기온(°C)'].astype(float)
 
-    years = np.arange(2000, 2024)
-    temps = 12 + 0.03*(years-2000) + np.random.normal(0,0.1,len(years))
-    df_temp = pd.DataFrame({"연도": years, "평균기온(°C)": temps})
-
-    period = st.slider("분석 기간 선택", 2000, 2023, (2010, 2023), key="temp_period")
+    period = st.slider("분석 기간 선택", 2000, 2024, (2010, 2024), key="temp_period")
     df_filtered = df_temp[(df_temp["연도"] >= period[0]) & (df_temp["연도"] <= period[1])]
 
     fig = px.line(df_filtered, x="연도", y="평균기온(°C)", markers=True)
@@ -38,83 +38,74 @@ with tabs[0]:
 # ---------------- 산불 ----------------
 with tabs[1]:
     st.subheader("산불 발생 현황 및 피해 면적")
+    df_fire_total = pd.read_csv("/workspaces/searepor/datas/10년간 산불발생 현황 (연평균).csv")
+    df_fire_total['면적(ha)'] = df_fire_total['면적(ha)'].replace({',':''}, regex=True).astype(float)
+    df_fire_total['건수'] = df_fire_total['건수'].astype(int)
 
-    # 시뮬레이션 데이터
-    years = np.arange(2000, 2024)
-    regions = ["전국", "서울", "경기", "강원", "충청", "전라", "경상", "제주"]
-    selected_region = st.selectbox("분석 지역 선택", regions, key="fire_region")
+    st.markdown("### 전국 연평균 산불 현황")
+    metric_total = st.selectbox("분석 지표 선택 (전국)", ["건수", "면적(ha)"], key="fire_metric_total")
+    period_total = st.slider("분석 기간 선택 (전국)", 2015, 2024, (2015, 2024), key="fire_period_total")
+    df_filtered_total = df_fire_total[(df_fire_total["구분"] >= period_total[0]) & (df_fire_total["구분"] <= period_total[1])]
 
-    fires = np.random.randint(200, 600, len(years))
-    damage = np.random.randint(200, 2000, len(years))
-    df_fire = pd.DataFrame({"연도": years, "산불 발생 건수": fires, "피해 면적(ha)": damage})
+    fig_total = px.bar(df_filtered_total, x="구분", y=metric_total)
+    st.plotly_chart(fig_total, use_container_width=True)
 
-    metric = st.selectbox("분석 지표 선택", ["산불 발생 건수", "피해 면적(ha)"], key="fire_metric")
-    period = st.slider("분석 기간 선택", 2000, 2023, (2005, 2023), key="fire_period")
+    st.markdown("### 지역별 산불 현황")
+    df_fire_region = pd.read_csv("/workspaces/searepor/datas/10년간 지역별 산불발생 현황.csv")
+    df_fire_region.columns = [c.strip() for c in df_fire_region.columns]
+    for col in df_fire_region.columns[1:]:
+        df_fire_region[col] = df_fire_region[col].replace({',':''}, regex=True).astype(float)
 
-    df_filtered = df_fire[(df_fire["연도"] >= period[0]) & (df_fire["연도"] <= period[1])]
-    fig = px.bar(df_filtered, x="연도", y=metric)
-    st.plotly_chart(fig, use_container_width=True)
+    region_list = df_fire_region['구분'].tolist()
+    selected_region = st.selectbox("지역 선택", region_list, key="fire_region_select")
+    selected_metric_region = st.selectbox("분석 지표 선택 (지역별)", df_fire_region.columns[1:], key="fire_metric_region")
 
-    st.markdown("""
-    - 고온·건조한 날씨로 산불 발생과 피해 면적 증가  
-    - 산불은 단순 산림 손실이 아니라 **야생 동물 서식지 파괴**로 직결  
-    - 장기적으로 생태계 균형 붕괴 가능성
-    """)
-    st.caption("출처: 산림청 산불 발생 현황 통계")
+    df_region_filtered = df_fire_region[df_fire_region['구분'] == selected_region]
+    region_value = df_region_filtered[selected_metric_region].values[0]
+    st.write(f"{selected_region} 지역 {selected_metric_region} : {region_value}")
 
 # ---------------- 해수면 ----------------
 with tabs[2]:
     st.subheader("해수면 온도 및 해양 변화")
+    df_sea = pd.read_csv("/workspaces/searepor/datas/지표및해양에8월달평균기온지표.csv")
+    df_sea['Year'] = df_sea['Year'].astype(int)
+    df_sea['Anomaly'] = df_sea['Anomaly'].astype(float)
 
-    years = np.arange(1993, 2024)
-    sst = 16 + 0.02*(years-1993) + np.random.normal(0,0.1,len(years))
-    df_sea = pd.DataFrame({"연도": years, "해수면 온도(°C)": sst})
-
-    period = st.slider("분석 기간 선택", 1993, 2023, (2000, 2023), key="sea_period")
+    period = st.slider("분석 기간 선택", df_sea['Year'].min(), df_sea['Year'].max(), (2000, 2024), key="sea_period")
     window = st.slider("이동평균 윈도우", 1, 10, 5, key="sea_window")
 
-    df_filtered = df_sea[(df_sea["연도"] >= period[0]) & (df_sea["연도"] <= period[1])]
-    df_filtered["이동평균"] = df_filtered["해수면 온도(°C)"].rolling(window).mean()
+    df_filtered = df_sea[(df_sea["Year"] >= period[0]) & (df_sea["Year"] <= period[1])]
+    df_filtered["이동평균"] = df_filtered["Anomaly"].rolling(window).mean()
 
-    fig = px.line(df_filtered, x="연도", y=["해수면 온도(°C)", "이동평균"], markers=True)
+    fig = px.line(df_filtered, x="Year", y=["Anomaly", "이동평균"], markers=True,
+                  labels={"value": "해수면 온도 편차 (°C)", "variable": "지표"})
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("""
-    - 1990년대 이후 전 세계 해수면 온도 상승  
-    - 산호초 백화, 어류 이동 경로 변화 등 해양 생태계 위협  
-    - 해수면 상승은 연안 생물 서식지와 인류 거주지 모두에 영향
+    - 2000년 이후 해수면 온도 편차 추이  
+    - 이상 고온/저온 현상 확인 가능  
+    - 장기적으로 해양 생태계와 연안 지역 영향
     """)
-    st.caption("출처: NOAA Climate Change & Marine Data")
+    st.caption("출처: 지표 및 해양 8월 평균기온 지표 CSV")
 
 # ---------------- 멸종위기종 ----------------
 with tabs[3]:
-    st.subheader("멸종위기종 증가 추세")
+    st.subheader("분류군별 멸종위기종 종 수")
+    df_species = pd.read_csv("/workspaces/searepor/datas/환경부 국립생물자원관_한국의 멸종위기종_20241231..csv")
+    df_species['분류군'] = df_species['분류군'].str.strip()
 
-    years = np.arange(2000, 2024)
-    df_species = pd.DataFrame({
-        "연도": years,
-        "포유류": 200 + (years-2000)*5 + np.random.randint(0,50,len(years)),
-        "조류": 150 + (years-2000)*3 + np.random.randint(0,30,len(years)),
-        "양서류": 100 + (years-2000)*4 + np.random.randint(0,40,len(years)),
-        "해양 생물": 80 + (years-2000)*2 + np.random.randint(0,20,len(years)),
-        "곤충": 50 + (years-2000)*3 + np.random.randint(0,15,len(years))
-    })
+    species_count = df_species['분류군'].value_counts().reset_index()
+    species_count.columns = ['분류군', '종 수']
 
-    category = st.multiselect(
-        "분류군 선택", 
-        ["포유류", "조류", "양서류", "해양 생물", "곤충"], 
-        default=["포유류","조류", "양서류", "해양 생물", "곤충"],
-        key="species_category"
-    )
-    period = st.slider("분석 기간 선택", 2000, 2023, (2010, 2023), key="species_period")
-    df_filtered = df_species[(df_species["연도"] >= period[0]) & (df_species["연도"] <= period[1])]
+    selected_groups = st.multiselect("분류군 선택", species_count['분류군'].tolist(),
+                                     default=species_count['분류군'].tolist())
 
-    fig = px.line(df_filtered, x="연도", y=category, markers=True)
+    df_filtered = species_count[species_count['분류군'].isin(selected_groups)]
+
+    fig = px.bar(df_filtered, x='분류군', y='종 수', text='종 수')
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("""
-    - 2000년 이후 멸종위기종 수 증가 추세  
-    - 특히 **양서류, 해양 생물, 곤충**이 빠른 속도로 위협받음  
-    - 기후 변화와 서식지 파괴가 주요 원인
+    - CSV 기준으로 현재 등록된 멸종위기종 종 수를 분류군별로 확인 가능  
+    - 연도별 데이터는 없으므로 ‘연도 추세’ 대신 ‘분류군별 종 수’ 시각화
     """)
-    st.caption("출처: IUCN Red List, UNEP-WCMC")
